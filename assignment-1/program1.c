@@ -1,99 +1,119 @@
 #include <stdio.h>
 
-int numbr(char c)
+int isDigit(char c)
 {
     return (c >= '0' && c <= '9');
 }
 
-int main()
+long processOperator(long a, long b, char op)
 {
+    switch (op)
+    {
+    case '+':
+        return a + b;
+    case '-':
+        return a - b;
+    case '*':
+        return a * b;
+    case '/':
+        if (b == 0)
+        {
+            printf("Error: Division by zero.\n");
+            return 0;
+        }
+        return a / b;
+    default:
+        printf("Error: Invalid operator '%c'.\n", op);
+        return 0;
+    }
+}
+
+long evaluateInput()
+{
+    long num = 0, result = 0, prevVal = 0;
+    char currOp = '+', prevOp = '+';
     char ch;
-    long result = 0, num = 0, Preval = 0;
-    char opr = '+', Prevopr = '+';
 
     printf("Enter an expression: ");
 
-    while ((ch = getchar()) != '\n' && ch != EOF)
+    while (scanf(" %c", &ch) == 1)
     {
-        if (ch == ' ') {
-            continue;
-        }
-
-        if (numbr(ch))
+        if (isDigit(ch))
         {
             num = num * 10 + (ch - '0');
         }
-
         else if (ch == '+' || ch == '-' || ch == '*' || ch == '/')
         {
-            if (Prevopr == '*') {
-                Preval = Preval * num;
-            } 
-            else if (Prevopr == '/')
+            switch (prevOp)
             {
+            case '*':
+                prevVal = prevVal * num;
+                break;
+            case '/':
                 if (num == 0)
                 {
                     printf("Error: Division by zero.\n");
                     return 0;
                 }
-                Preval = Preval / num;
+                prevVal = prevVal / num;
+                break;
+            default:
+                prevVal = num;
             }
-            else
-            {
-                Preval = num;
-            }
-            num = 0;
 
             if (ch == '+' || ch == '-')
             {
-                if (opr == '+') {
-                    result += Preval;
-                }
-                else if (opr == '-') {
-                    result -= Preval;
-                }
-                  
-                opr = ch;
-                Prevopr = '+';
+                result = processOperator(result, prevVal, currOp);
+                currOp = ch;
+                prevOp = '+';
             }
             else
             {
-                Prevopr = ch;
+                prevOp = ch;
             }
+
+            num = 0;
+        }
+        else if (ch == '=')
+        {
+            break;
+        }
+        else if (ch == '-')
+        {
+            scanf("%ld", &num);
+            num = -num;
         }
         else
         {
-            printf("Error: Invalid expression.\n");
+            printf("Error: Invalid character in expression.\n");
             return 0;
         }
     }
 
-    if (Prevopr == '*') {
-        Preval = Preval * num;
-    }
-        
-    else if (Prevopr == '/')
+    switch (prevOp)
     {
+    case '*':
+        prevVal = prevVal * num;
+        break;
+    case '/':
         if (num == 0)
         {
             printf("Error: Division by zero.\n");
             return 0;
         }
-        Preval = Preval / num;
-    }
-    else
-    {
-        Preval = num;
-    }
-
-    //for the last plus or minus
-    if (opr == '+') {
-        result += Preval;
-    }
-    else if (opr == '-') {
-        result -= Preval;
+        prevVal = prevVal / num;
+        break;
+    default:
+        prevVal = num;
     }
 
-    printf("%ld\n", result);
+    result = processOperator(result, prevVal, currOp);
+    return result;
+}
+
+int main()
+{
+    long result = evaluateInput();
+    printf("Result: %ld\n", result);
     return 0;
 }
