@@ -21,14 +21,8 @@ void create_file()
 
 void read_name(char name[], int size)
 {
-    int i = 0;
-    char ch;
     printf("Enter Name: ");
-    while ((ch = getchar()) != '\n' && i < size - 1)
-    {
-        name[i++] = ch;
-    }
-    name[i] = '\0';
+    scanf(" %49[^\n]", name);
 }
 
 void create_user()
@@ -43,55 +37,59 @@ void create_user()
     struct User u;
     printf("Enter ID: ");
     scanf("%d", &u.id);
-    getchar();
 
     read_name(u.name, 50);
 
     printf("Enter Age: ");
     scanf("%d", &u.age);
-    getchar();
 
     fprintf(fp, "%d,%s,%d\n", u.id, u.name, u.age);
     fclose(fp);
     printf("User added.\n");
 }
 
-void see_users() {
+void see_users()
+{
     FILE *fp = fopen("users.txt", "r");
-    struct User u;
-
-    if (fp == NULL) {
+    if (fp == NULL)
+    {
         printf("No users found.\n");
         return;
     }
 
+    struct User u;
     printf("\nID\tName\tAge\n");
     printf("--------------------------\n");
 
-    while (fscanf(fp, "%d,%49[^,],%d\n", &u.id, u.name, &u.age) != EOF) {
+    while (fscanf(fp, "%d,%49[^,],%d\n", &u.id, u.name, &u.age) != EOF)
+    {
         printf("%d\t%s\t%d\n", u.id, u.name, u.age);
     }
 
     fclose(fp);
 }
 
-
 void user_update()
 {
     FILE *fp = fopen("users.txt", "r");
-    FILE *temp = fopen("temp.txt", "w");
-    struct User u;
-    int id, found = 0;
-
-    if (fp == NULL || temp == NULL)
+    if (fp == NULL)
     {
-        printf("Error opening file.\n");
+        printf("Error opening users.txt\n");
         return;
     }
 
+    FILE *temp = fopen("temp.txt", "w");
+    if (temp == NULL)
+    {
+        printf("Error creating temp.txt\n");
+        fclose(fp);
+        return;
+    }
+
+    struct User u;
+    int id, found = 0;
     printf("Enter ID to update: ");
     scanf("%d", &id);
-    getchar();
 
     while (fscanf(fp, "%d,%49[^,],%d\n", &u.id, u.name, &u.age) != EOF)
     {
@@ -101,7 +99,6 @@ void user_update()
             read_name(u.name, 50);
             printf("Enter new Age: ");
             scanf("%d", &u.age);
-            getchar();
         }
         fprintf(temp, "%d,%s,%d\n", u.id, u.name, u.age);
     }
@@ -111,11 +108,11 @@ void user_update()
 
     if (found)
     {
-        remove("users.txt");
-        rename("temp.txt", "users.txt");
-        printf("User updated successfully.\n");
+        if (remove("users.txt") != 0 || rename("temp.txt", "users.txt") != 0)
+            printf("Error updating file.\n");
+        else
+            printf("User updated successfully.\n");
     }
-
     else
     {
         remove("temp.txt");
@@ -126,19 +123,24 @@ void user_update()
 void delete_user()
 {
     FILE *fp = fopen("users.txt", "r");
-    FILE *temp = fopen("temp.txt", "w");
-    struct User u;
-    int id, found = 0;
-
-    if (fp == NULL || temp == NULL)
+    if (fp == NULL)
     {
-        printf("Error opening file.\n");
+        printf("Error opening users.txt\n");
         return;
     }
 
+    FILE *temp = fopen("temp.txt", "w");
+    if (temp == NULL)
+    {
+        printf("Error creating temp.txt\n");
+        fclose(fp);
+        return;
+    }
+
+    struct User u;
+    int id, found = 0;
     printf("Enter ID to delete: ");
     scanf("%d", &id);
-    getchar();
 
     while (fscanf(fp, "%d,%49[^,],%d\n", &u.id, u.name, &u.age) != EOF)
     {
@@ -155,9 +157,10 @@ void delete_user()
 
     if (found)
     {
-        remove("users.txt");
-        rename("temp.txt", "users.txt");
-        printf("User deleted successfully.\n");
+        if (remove("users.txt") != 0 || rename("temp.txt", "users.txt") != 0)
+            printf("Error updating file.\n");
+        else
+            printf("User deleted successfully.\n");
     }
     else
     {
@@ -169,33 +172,24 @@ void delete_user()
 int main()
 {
     int choice;
-
     create_file();
 
     while (1)
     {
         printf("\n--- User Management ---\n");
-        printf("1. Add User\n");
-        printf("2. Show Users\n");
-        printf("3. Update User\n");
-        printf("4. Delete User\n");
-        printf("5. Exit\n");
+        printf("1. Add User\n2. Show Users\n3. Update User\n4. Delete User\n5. Exit\n");
         printf("Enter your choice: ");
         scanf("%d", &choice);
-        getchar();
 
-        if (choice == 1)
-            create_user();
-        else if (choice == 2)
-            see_users();
-        else if (choice == 3)
-            user_update();
-        else if (choice == 4)
-            delete_user();
-        else if (choice == 5)
-            break;
-        else
-            printf("Invalid choice!\n");
+        switch (choice)
+        {
+            case 1: create_user(); break;
+            case 2: see_users(); break;
+            case 3: user_update(); break;
+            case 4: delete_user(); break;
+            case 5: exit(0);
+            default: printf("Invalid choice!\n");
+        }
     }
 
     return 0;
