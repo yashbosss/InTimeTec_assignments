@@ -1,20 +1,21 @@
 #include <stdio.h>
 
-int n;
-
 struct studentData
 {
-    int studentRollNumber;
-    char studentName[100];
-    int studentMarksSub1;
-    int studentMakrsSub2;
-    int studentMarksSub3;
+    int rollNumber;
+    char name[100];
+    int marksSub1;
+    int marksSub2;
+    int marksSub3;
 };
 
-int isValidName(char name[]) {
+int isValidName(char name[])
+{
     int i = 0;
-    while (name[i] != '\0') {
-        if (name[i] >= '0' && name[i] <= '9') {
+    while (name[i] != '\0')
+    {
+        if (name[i] >= '0' && name[i] <= '9')
+        {
             return 0;
         }
         i++;
@@ -22,17 +23,14 @@ int isValidName(char name[]) {
     return 1;
 }
 
-
-// for calculating average marks
-int averageMarks(int sub1Marks, int sub2Marks, int sub3Marks)
+float calculatingAverageMarks(int sub1Marks, int sub2Marks, int sub3Marks)
 {
     int Total = sub1Marks + sub2Marks + sub3Marks;
-    float average = Total / 3;
+    float average = Total / 3.0;
     return average;
 }
 
-// for calculating grade of student
-void studentGrade(int average)
+void printGrade(int average)
 {
     if (average >= 85)
     {
@@ -56,8 +54,7 @@ void studentGrade(int average)
     }
 }
 
-// for giving stars according to student performance
-void studentPerformance(int average)
+void printStudentPerformance(int average)
 {
     if (average >= 85)
     {
@@ -77,70 +74,79 @@ void studentPerformance(int average)
     }
 }
 
-// student roll via recursion
-void studentRoll(struct studentData s[], int serialNumber, int n)
+void printStudentRoll(struct studentData s[], int serialNumber, int totalStudentCount)
 {
-    if (serialNumber == n)
+    if (serialNumber == totalStudentCount)
     {
         return;
     }
-    printf("%d ", s[serialNumber].studentRollNumber);
-    studentRoll(s, serialNumber + 1, n);
+    printf("%d ", s[serialNumber].rollNumber);
+    printStudentRoll(s, serialNumber + 1, totalStudentCount);
+}
+
+void printStudentData(struct studentData s[], int totalStudentCount)
+{
+    printf("\n");
+    for (int i = 0; i < totalStudentCount; i++)
+    {
+        printf("Roll: %d\n", s[i].rollNumber);
+        printf("Name: %s\n", s[i].name);
+        printf("Total: %d\n", s[i].marksSub1 + s[i].marksSub2 + s[i].marksSub3);
+        printf("Average: %f\n", calculatingAverageMarks(s[i].marksSub1, s[i].marksSub2, s[i].marksSub3));
+
+        // for integer required in printing grade and performance stars
+        int average = calculatingAverageMarks(s[i].marksSub1, s[i].marksSub2, s[i].marksSub3);
+
+        printf("Grade: ");
+        printGrade(average);
+        printf("\n");
+        if (average >= 35)
+        {
+            printStudentPerformance(average);
+        }
+        printf("\n\n");
+    }
 }
 
 int main()
 {
+    int totalNumberOfStudents;
     printf("Enter Number of students: ");
-    scanf("%d", &n);
+    scanf("%d", &totalNumberOfStudents);
     printf("\n\n");
-    struct studentData s[n];
+    struct studentData s[totalNumberOfStudents];
     int i = 0;
+    int n = totalNumberOfStudents;
     while (i < n)
     {
         printf("Enter Roll, name and marks for three subjects for student %d:\n", i + 1);
 
-        if (scanf("%d %s %d %d %d",
-                  &s[i].studentRollNumber,
-                  s[i].studentName,
-                  &s[i].studentMarksSub1,
-                  &s[i].studentMakrsSub2,
-                  &s[i].studentMarksSub3) != 5) {
+        if (scanf("%d", &s[i].rollNumber) + scanf("%s", s[i].name) + scanf("%d", &s[i].marksSub1) + scanf("%d", &s[i].marksSub2) + scanf("%d", &s[i].marksSub3) != 5)
+        {
             printf("Invalid input! Retry\n");
-            while (getchar() != '\n');
+            while (getchar() != '\n')
+                ;
             continue;
         }
 
-        if (s[i].studentRollNumber <= 0 ||
-            s[i].studentMarksSub1 < 0 || s[i].studentMarksSub1 > 100 ||
-            s[i].studentMakrsSub2 < 0 || s[i].studentMakrsSub2 > 100 ||
-            s[i].studentMarksSub3 < 0 || s[i].studentMarksSub3 > 100 ||
-            !isValidName(s[i].studentName)) {
+        if (s[i].rollNumber <= 0 ||
+            s[i].marksSub1 < 0 || s[i].marksSub1 > 100 ||
+            s[i].marksSub2 < 0 || s[i].marksSub2 > 100 ||
+            s[i].marksSub3 < 0 || s[i].marksSub3 > 100 ||
+            !isValidName(s[i].name))
+        {
             printf("Invalid input! Retry\n\n");
-            while (getchar() != '\n');
-        } else {
+            while (getchar() != '\n')
+                ;
+        }
+        else
+        {
             i++;
         }
     }
 
-    printf("\n");
-    for (int i = 0; i < n; i++)
-    {
-        printf("Roll: %d\n", s[i].studentRollNumber);
-        printf("Name: %s\n", s[i].studentName);
-        printf("Total: %d\n", s[i].studentMarksSub1 + s[i].studentMakrsSub2 + s[i].studentMarksSub3);
-        int average = averageMarks(s[i].studentMarksSub1, s[i].studentMakrsSub2, s[i].studentMarksSub3);
-        printf("Average: %d\n", average);
-        printf("Grade: ");
-        studentGrade(average);
-        printf("\n");
-        if (average >= 35)
-        {
-            studentPerformance(average);
-        }
-        printf("\n\n");
-    }
-
+    printStudentData(s, n);
     i = 0;
     printf("List of Roll Numbers: ");
-    studentRoll(s, i, n);
+    printStudentRoll(s, i, n);
 }
