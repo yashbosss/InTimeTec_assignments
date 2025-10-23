@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include<time.h>
 
 void transposeMatrix(int **sonarImageMatrix, int matrixSize)
 {
@@ -38,7 +39,7 @@ void rotate90Clockwise(int **sonarImageMatrix, int matrixSize)
     reverseMatrixRows(sonarImageMatrix, matrixSize);
 }
 
-void SmoothingFilter(int **sonarImageMatrix, int matrixSize)
+void smoothingFilter(int **sonarImageMatrix, int matrixSize)
 {
     for (int i = 0; i < matrixSize; i++)
     {
@@ -121,7 +122,7 @@ int main()
     printf("\nRotated:\n");
     printMatrix(sonarImageMatrix, sonarImageSize);
 
-    SmoothingFilter(sonarImageMatrix, sonarImageSize);
+    smoothingFilter(sonarImageMatrix, sonarImageSize);
     printf("\nSmoothening Filter:\n");
     printMatrix(sonarImageMatrix, sonarImageSize);
 
