@@ -32,6 +32,8 @@ freeBlockNode *freeListTail = NULL;
 fileNode *root = NULL;
 fileNode *cwd = NULL;
 
+void freeBlocks(fileNode *file);
+
 int str_len(const char *s)
 {
     int i = 0;
@@ -53,14 +55,22 @@ void str_copy(char *dest, const char *src)
 
 int str_cmp(const char *a, const char *b)
 {
+    int lenA = str_len(a);
+    int lenB = str_len(b);
+
+    if (lenA != lenB)
+    {
+        return (lenA > lenB) ? 1 : -1;
+    }
+
     int i = 0;
-    while (a[i] != '\0' && b[i] != '\0')
+    while (i < lenA)
     {
         if (a[i] != b[i])
-            return 1;
+            return (a[i] > b[i]) ? 1 : -1;
         i++;
     }
-    return (a[i] == b[i]) ? 0 : 1;
+    return 0;
 }
 
 void readLine(char *buf, int max)
@@ -140,6 +150,24 @@ void removeChild(fileNode *parent, fileNode *target)
 {
     if (!parent->children)
         return;
+
+    if (target->isDirectory && target->children != NULL)
+    {
+        fileNode *child = target->children;
+        fileNode *nextChild;
+        do
+        {
+            nextChild = child->next;
+            removeChild(target, child);
+            child = nextChild;
+        } while (child != target->children);
+    }
+
+    if (!target->isDirectory && target->numBlocks > 0)
+    {
+        freeBlocks(target);
+    }
+
     fileNode *head = parent->children;
     if (head == target && head->next == head)
     {
@@ -162,6 +190,20 @@ void allocateBlocks(fileNode *file, const char *data)
         return;
 
     int neededBlocks = (dataSize + blockSize - 1) / blockSize;
+    int availableBlocks = 0;
+
+    freeBlockNode *temp = freeListHead;
+    while (temp != NULL)
+    {
+        availableBlocks++;
+        temp = temp->next;
+    }
+
+    if (neededBlocks > availableBlocks)
+    {
+        printf("\nEroor! Not enough space in Disk. available Blocks: %d neededBlocks: %d", availableBlocks, neededBlocks);
+    }
+
     file->numBlocks = 0;
     file->size = dataSize;
 
@@ -174,9 +216,16 @@ void allocateBlocks(fileNode *file, const char *data)
         file->blockPointers[file->numBlocks++] = block->index;
 
         int start = i * blockSize;
-        for (int j = 0; j < blockSize && (start + j) < dataSize; j++)
+        int end = start + blockSize;
+        if (end > dataSize)
+        {
+            end = dataSize;
+        }
+
+        for (int j = 0; j < end - start; j++)
             virtualDisk[block->index][j] = data[start + j];
-        virtualDisk[block->index][dataSize % blockSize] = '\0';
+
+        virtualDisk[block->index][end - start] = '\0';
 
         free(block);
     }
@@ -205,7 +254,7 @@ void mkdirCommand(const char *name)
     newDir->isDirectory = 1;
     newDir->children = NULL;
     newDir->parent = cwd;
-    newDir->next = newDir->prev = newDir;
+    newDir->next = newDir->prev = NULL;
     insertChild(cwd, newDir);
     printf("Directory '%s' created successfully.\n", name);
 }
@@ -218,7 +267,7 @@ void createCommand(const char *name)
     newFile->numBlocks = 0;
     newFile->size = 0;
     newFile->parent = cwd;
-    newFile->next = newFile->prev = newFile;
+    newFile->next = newFile->prev = NULL;
     insertChild(cwd, newFile);
     printf("File '%s' created successfully.\n", name);
 }
@@ -338,6 +387,41 @@ void dfCommand()
            numberOfBlocks, used, freeCount, (used * 100.0) / numberOfBlocks);
 }
 
+void freeFileNode(fileNode *node)
+{
+    if (!node)
+        return;
+
+    if (node->isDirectory && node->children)
+    {
+        fileNode *child = node->children;
+        fileNode *nextChild;
+        do
+        {
+            nextChild = child->next;
+            freeFileNode(child);
+            child = nextChild;
+        } while (child != node->children);
+    }
+    if (!node->isDirectory)
+        freeBlocks(node);
+
+    free(node);
+}
+
+void freeMemory()
+{
+    freeFileNode(root);
+
+    freeBlockNode *block = freeListHead;
+    while (block)
+    {
+        freeBlockNode *next = block->next;
+        free(block);
+        block = next;
+    }
+}
+
 int main()
 {
     initializeFreeList();
@@ -374,6 +458,7 @@ int main()
 
         while (ch == ' ' || ch == '\n')
             ch = getchar();
+
         i = 0;
         while (ch != ' ' && ch != '\n')
         {
@@ -382,11 +467,9 @@ int main()
         }
         fileOrDirName[i] = '\0';
 
-        while (ch == ' ' && ch == '\n')
-            ch = getchar();
         i = 0;
         ch = getchar();
-        while (ch != '\n' && ch != EOF)
+        while (ch != ' ' && ch != '\n' && ch != EOF)
         {
             if (i != 0)
                 ch = getchar();
@@ -423,6 +506,8 @@ int main()
             printf("Unknown command.\n");
     }
 
-    printf("Exiting program...\n");
+    freeMemory();
+    printf("Memory released. Exiting program...\n");
+
     return 0;
 }
