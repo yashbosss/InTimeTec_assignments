@@ -27,22 +27,17 @@ void strCopy(char *dest, const char *src, int maxLen)
 
 int strCmp(const char *a, const char *b)
 {
-    int lenA = strLen(a);
-    int lenB = strLen(b);
-
-    if (lenA != lenB)
-    {
-        return (lenA > lenB) ? 1 : -1;
-    }
-
     int i = 0;
-    while (i < lenA)
+    while (a[i] != '\0' && b[i] != '\0')
     {
-        if (a[i] != b[i])
+        if (a[i] != b[i]) {
             return (a[i] > b[i]) ? 1 : -1;
+        }
         i++;
     }
-    return 0;
+    if (a[i] == '\0' && b[i] == '\0')
+        return 0;
+    return (a[i] == '\0') ? -1 : 1;
 }
 
 void readLine(char *buf, int max)
@@ -72,12 +67,13 @@ typedef struct
     int wickets;
     float economyRate;
     double performanceIndex;
-} myPlayer;
+} playerInfo;
 
 typedef struct Node
 {
-    myPlayer data;
+    playerInfo data;
     struct Node *next;
+    struct Node *roleNext[3];
 } Node;
 
 typedef struct
@@ -94,7 +90,7 @@ typedef struct
 
 Team teamsArr[MAX_TEAMS];
 
-double evaluatePerformanceIndex(const myPlayer *p)
+double evaluatePerformanceIndex(const playerInfo *p)
 {
     if (p->role == ROLE_BATSMAN)
     {
@@ -110,7 +106,7 @@ double evaluatePerformanceIndex(const myPlayer *p)
     }
 }
 
-Node *createNode(const myPlayer *mp)
+Node *createNode(const playerInfo *mp)
 {
     Node *n = (Node *)malloc(sizeof(Node));
     if (!n)
@@ -118,6 +114,7 @@ Node *createNode(const myPlayer *mp)
         printf("Memory allocation failed\n");
         exit(1);
     }
+    n->roleNext[0] = n->roleNext[1] = n->roleNext[2] = NULL;
     n->data = *mp;
     n->next = NULL;
     return n;
@@ -141,17 +138,17 @@ void insertIntoRole(Team *t, Node *n, int roleIndex)
     Node *head = t->roleHeads[roleIndex];
     if (!head || n->data.performanceIndex > head->data.performanceIndex)
     {
-        n->next = head;
+        n->roleNext[roleIndex] = head;
         t->roleHeads[roleIndex] = n;
         return;
     }
     Node *cur = head;
-    while (cur->next && cur->next->data.performanceIndex >= n->data.performanceIndex)
+    while (cur->roleNext[roleIndex] && cur->roleNext[roleIndex]->data.performanceIndex >= n->data.performanceIndex)
     {
-        cur = cur->next;
+        cur = cur->roleNext[roleIndex];
     }
-    n->next = cur->next;
-    cur->next = n;
+    n->roleNext[roleIndex] = cur->roleNext[roleIndex];
+    cur->roleNext[roleIndex] = n;
 }
 
 int teamSearchById(int id)
@@ -172,27 +169,38 @@ int teamSearchById(int id)
 
 int findTeamIndexByName(const char *name)
 {
-    for (int i = 0; i < MAX_TEAMS; ++i)
+    int low = 0;
+    int high = MAX_TEAMS - 1;
+
+    while (low <= high)
     {
-        if (strCmp(teamsArr[i].name, name) == 0)
-            return i;
+        int mid = (low + high) / 2;
+        int cmp = strCmp(name, teamsArr[mid].name);
+
+        if (cmp == 0)
+            return mid;
+
+        if (cmp > 0)
+            low = mid + 1;
+        else
+            high = mid - 1;
     }
+
     return -1;
 }
 
-void addPlayer(Team *t, const myPlayer *mp)
+void addPlayer(Team *t, const playerInfo *newPlayer)
 {
-    Node *n_all = createNode(mp);
-    Node *n_role = createNode(mp);
+    Node *n = createNode(newPlayer);
 
-    insertPlayerToTeam(t, n_all);
+    insertPlayerToTeam(t, n);
 
-    insertIntoRole(t, n_role, (int)mp->role);
+    insertIntoRole(t, n, (int)newPlayer->role);
 
     t->totalPlayers += 1;
-    if (mp->role == ROLE_BATSMAN || mp->role == ROLE_ALLROUNDER)
+    if (newPlayer->role == ROLE_BATSMAN || newPlayer->role == ROLE_ALLROUNDER)
     {
-        t->sumBattingStrikeRate += mp->strikeRate;
+        t->sumBattingStrikeRate += newPlayer->strikeRate;
         t->countBattersAllrounders += 1;
     }
 }
@@ -209,28 +217,44 @@ void initializeTeams()
         teamsArr[i].playersHead = teamsArr[i].playersTail = NULL;
         teamsArr[i].roleHeads[0] = teamsArr[i].roleHeads[1] = teamsArr[i].roleHeads[2] = NULL;
     }
+    for (int i = 0; i < MAX_TEAMS - 1; i++) {
+        int best = i;
+        for (int j = i + 1; j < MAX_TEAMS; j++) {
+            if (strCmp(teamsArr[j].name, teamsArr[best].name) < 0)
+            {
+                best = j;
+            }
+        }
+        if (best != i) {
+            Team temp = teamsArr[i];
+            teamsArr[i] = teamsArr[best];
+            teamsArr[best] = temp;
+        }
+    }
+    for (int i = 0; i < MAX_TEAMS; i++) { 
+        teamsArr[i].teamId = i + 1;
+    }
 }
 
 int checkRole(const char *roleStr)
 {
-    if (!roleStr)
-        return -1;
-    if (roleStr[0] == 'B' || roleStr[0] == 'b')
+    if (strCmp(roleStr, "Batsman") == 0)
         return ROLE_BATSMAN;
-    if (roleStr[0] == 'B' && roleStr[1] == 'o')
+
+    if (strCmp(roleStr, "Bowler") == 0)
         return ROLE_BOWLER;
-    if (roleStr[0] == 'A' || roleStr[0] == 'a')
+
+    if (strCmp(roleStr, "All-rounder") == 0)
         return ROLE_ALLROUNDER;
-    if (roleStr[0] == 'B' && roleStr[1] == 'o')
-        return ROLE_BOWLER;
+
     return -1;
 }
 
-const char *roleType(int r)
+const char *roleType(int playerRole)
 {
-    if (r == ROLE_BATSMAN)
+    if (playerRole == ROLE_BATSMAN)
         return "Batsman";
-    if (r == ROLE_BOWLER)
+    if (playerRole == ROLE_BOWLER)
         return "Bowler";
     return "All-Rounder";
 }
@@ -239,7 +263,7 @@ void initializePlayersFromPlayersDataSet()
 {
     for (int i = 0; i < playerCount; ++i)
     {
-        myPlayer mp;
+        playerInfo mp;
         mp.playerId = players[i].id;
         strCopy(mp.name, players[i].name, 51);
         strCopy(mp.teamName, players[i].team, 51);
@@ -292,7 +316,7 @@ void addPlayerToTeam()
     }
     Team *t = &teamsArr[tempId];
 
-    myPlayer mp;
+    playerInfo mp;
     char buf[128];
 
     printf("Enter Player ID: ");
@@ -415,7 +439,7 @@ void displayTeamPlayers()
     Node *cur = t->playersHead;
     while (cur)
     {
-        myPlayer *p = &cur->data;
+        playerInfo *p = &cur->data;
         printf("%-4d %-29s %-11s %-6d %6.1f %7.1f %6d %6.1f %10.2f\n",
                p->playerId, p->name, roleType(p->role), p->totalRuns,
                p->battingAverage, p->strikeRate, p->wickets, p->economyRate,
@@ -434,17 +458,6 @@ void sortTeamsByAvgStrikeRate(int idxs[], int n)
 {
     for (int i = 0; i < n - 1; ++i)
     {
-        int maxj = i;
-        double maxi = 0.0;
-        for (int k = i; k < n; ++k)
-        {
-            int id = idxs[k];
-            Team *t = &teamsArr[id];
-            double avgSR = (t->countBattersAllrounders > 0) ? (t->sumBattingStrikeRate / t->countBattersAllrounders) : 0.0;
-            double curMax = (k == i) ? avgSR : -1e9;
-            if (k == i)
-                maxi = avgSR;
-        }
         int best = i;
         double bestVal = -1e9;
         for (int k = i; k < n; ++k)
@@ -542,12 +555,12 @@ void topKPlayersByRole()
     int cnt = 0;
     while (cur && cnt < K)
     {
-        myPlayer *p = &cur->data;
+        playerInfo *p = &cur->data;
         printf("%-4d %-29s %-11s %-6d %6.1f %7.1f %6d %6.1f %10.2f\n",
                p->playerId, p->name, roleType(p->role), p->totalRuns,
                p->battingAverage, p->strikeRate, p->wickets, p->economyRate,
                p->performanceIndex);
-        cur = cur->next;
+        cur = cur->roleNext[roleIndex];
         cnt++;
     }
     if (cnt == 0)
@@ -636,14 +649,14 @@ void displayByRole()
     {
         HeapItem top = heap_pop(heap, &hsize);
         Node *cur = top.node;
-        myPlayer *p = &cur->data;
+        playerInfo *p = &cur->data;
         printf("%-4d %-29s %-20s %-11s %-6d %6.1f %6.1f %5d %4.1f %10.2f\n",
                p->playerId, p->name, p->teamName, roleType(p->role),
                p->totalRuns, p->battingAverage, p->strikeRate, p->wickets, p->economyRate, p->performanceIndex);
-        if (cur->next)
+        if (cur->roleNext[roleIndex])
         {
             HeapItem ni;
-            ni.node = cur->next;
+            ni.node = cur->roleNext[roleIndex];;
             ni.teamIndex = top.teamIndex;
             heap_push(heap, &hsize, ni);
         }
@@ -666,7 +679,7 @@ void printMenu()
     printf("Enter your choice: ");
 }
 
-void freeAllMemory5()
+void freeAllMemory()
 {
     for (int i = 0; i < MAX_TEAMS; ++i)
     {
@@ -716,7 +729,7 @@ int main()
             displayByRole();
             break;
         case 6:
-            freeAllMemory5();
+            freeAllMemory();
             printf("Exiting.\n");
             return 0;
         default:
