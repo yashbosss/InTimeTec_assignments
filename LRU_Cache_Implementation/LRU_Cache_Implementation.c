@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #define MAX_LENGTH 50
-#define HASH_SIZE 2009
+#define EMPTY -1
+#define TOMBSTONE -2
+
 
 typedef struct Node {
     int key;
@@ -22,6 +24,7 @@ typedef struct Hash {
 } Hash;
 
 Hash *hashTable;
+int hashSize;
 
 int strCmp(const char *a, const char *b)
 {
@@ -59,28 +62,41 @@ Node* createNode(int key, char *data) {
 }
 
 void initializeHash(int size) {
-    hashTable = (Hash*)malloc(HASH_SIZE * sizeof(Hash));
+    hashSize = size;
+    hashTable = (Hash*)malloc(hashSize * sizeof(Hash));
 
     for (int i = 0; i < size; i++) {
-        hashTable[i].key = -1;  
+        hashTable[i].key = EMPTY;  
         hashTable[i].node = NULL;
     }
 }
 
 int hashFunction(int key) {
-    return key % HASH_SIZE;
+    return key % hashSize;
 }
 
 int searchKeyIndex(int key) {
     int idx = hashFunction(key);
+    int firstTombstone = -1;
 
-    while (hashTable[idx].key != -1 && hashTable[idx].key != key)
-        idx = (idx + 1) % HASH_SIZE;
+    while (hashTable[idx].key != EMPTY) {
 
-    return idx;
+        if (hashTable[idx].key == key)
+            return idx;
+
+        if (hashTable[idx].key == TOMBSTONE && firstTombstone == -1)
+            firstTombstone = idx;
+
+        idx = (idx + 1) % hashSize;
+    }
+
+    return (firstTombstone != -1 ? firstTombstone : idx);
 }
 
 void makeMRU(Queue *queue, Node *toBeMRU) {
+    if (!queue->front || queue->front == queue->rear)
+        return;
+        
     if (queue->front == toBeMRU)
         return;  
 
@@ -126,7 +142,7 @@ void removeRear(Queue *queue) {
     }
 
     int idx = searchKeyIndex(key);
-    hashTable[idx].key = -1;
+    hashTable[idx].key = TOMBSTONE;
     hashTable[idx].node = NULL;
 
     free(LRU);
@@ -135,10 +151,10 @@ void removeRear(Queue *queue) {
 Node* hashGetNode(int key) {
     int idx = hashFunction(key);
 
-    while (hashTable[idx].key != -1) {
+    while (hashTable[idx].key != EMPTY) {
         if (hashTable[idx].key == key)
             return hashTable[idx].node;
-        idx = (idx + 1) % HASH_SIZE;
+        idx = (idx + 1) % hashSize;
     }
     return NULL;
 }
