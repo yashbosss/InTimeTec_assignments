@@ -18,20 +18,22 @@ typedef enum
 typedef struct ProcessControlBlocks
 {
     int processID;
-    char name[NAME_LEN];
-    int burst;
-    int ioStarttart;
-    int ioLen;
+    char processName[NAME_LEN];
+    int cpuBurstTime;
+    int ioStartTime;
+    int ioDurationTime;
 
-    int usedCPU;
-    int usedIO;
-    int execSince;
-    int remainingIO;
+    int cpuUsed;
+    int ioUsed;
+    int cpuSinceStart;
+    int ioRemaining;
 
-    int arrival;
-    int waiting;
-    int completion;
-    int totalIOTimeSpent;
+    int arrivalTime;
+    int waitingTime;
+    int completionTime;
+    int ioTotalTime;
+
+    int ioJustStartedFlag; 
 
     processState state;
     struct ProcessControlBlocks *next;
@@ -52,74 +54,75 @@ typedef struct
 typedef struct
 {
     int processID;
-    int at;
+    int killedAtTime;
 } KillEvent;
 
-ProcessQueue readyQ, waitQ, doneQ;
+ProcessQueue readyQueue, waitQueue, terminationQueue;
 Slot *hashTable = NULL;
 int hashSize = 0;
 
-int totalProcess = 0;
-int now = 0;
-int doneCount = 0;
+int totalProcesses = 0;
+int currentTime = 0;
+int completedProcessCount = 0;
 
-ProcessControlBlocks *running = NULL;
+ProcessControlBlocks *runningProcessTracker = NULL;
 
 int readIntegers()
 {
-    char line[128];
-    int x;
+    char bufferLine[128];
+    int inputInteger;
 
     while (1)
     {
-        if (!fgets(line, sizeof(line), stdin))
+        if (!fgets(bufferLine, sizeof(bufferLine), stdin))
             continue;
-        if (sscanf(line, "%d", &x) == 1 && x > 0)
-            return x;
+        if (sscanf(bufferLine, "%d", &inputInteger) == 1 && inputInteger > 0)
+            return inputInteger;
         printf("Invalid input! Try again.\n");
     }
 }
 
-int readProcessLines(ProcessControlBlocks *p)
+int readProcessLines(ProcessControlBlocks *process)
 {
-    char line[256];
+    char bufferLine[256];
     while (1)
     {
-        if (!fgets(line, sizeof(line), stdin))
+        if (!fgets(bufferLine, sizeof(bufferLine), stdin))
             continue;
 
-        char name[NAME_LEN];
-        int processID, cpu, ioStart, ioDuration;
+        char processName[NAME_LEN];
+        int processID, cpuBurstTime, ioStartTime, ioDurationTime;
 
-        int f = sscanf(line, "%63s %d %d %d %d",
-                       name, &processID, &cpu, &ioStart, &ioDuration);
+        int f = sscanf(bufferLine, "%63s %d %d %d %d",
+                       processName, &processID, &cpuBurstTime, &ioStartTime, &ioDurationTime);
 
-        if (f == 5 && processID > 0 && cpu > 0 && ioStart >= -1 && ioDuration >= 0)
+        if (f == 5 && processID > 0 && cpuBurstTime > 0 && ioStartTime >= -1 && ioDurationTime >= 0)
         {
-            if (ioDuration == 0)
+            if (ioDurationTime == 0)
             {
-                ioStart = 0;
-                ioDuration = 0;
+                ioStartTime = 0;
+                ioDurationTime = 0;
             }
 
-            strncpy(p->name, name, NAME_LEN - 1);
-            p->name[NAME_LEN - 1] = '\0';
+            strncpy(process->processName, processName, NAME_LEN - 1);
+            process->processName[NAME_LEN - 1] = '\0';
 
-            p->processID = processID;
-            p->burst = cpu;
-            p->ioStarttart = ioStart;
-            p->ioLen = ioDuration;
+            process->processID = processID;
+            process->cpuBurstTime = cpuBurstTime;
+            process->ioStartTime = ioStartTime;
+            process->ioDurationTime = ioDurationTime;
 
-            p->usedCPU = 0;
-            p->usedIO = 0;
-            p->execSince = 0;
-            p->remainingIO = 0;
-            p->arrival = 0;
-            p->waiting = 0;
-            p->completion = -1;
-            p->totalIOTimeSpent = 0;
-            p->state = READY_PROCESS;
-            p->next = NULL;
+            process->cpuUsed = 0;
+            process->ioUsed = 0;
+            process->cpuSinceStart = 0;
+            process->ioRemaining = 0;
+            process->arrivalTime = 0;
+            process->waitingTime = 0;
+            process->completionTime = -1;
+            process->ioTotalTime = 0;
+            process->state = READY_PROCESS;
+            process->next = NULL;
+            process->ioJustStartedFlag = 0; 
 
             return 1;
         }
@@ -127,7 +130,7 @@ int readProcessLines(ProcessControlBlocks *p)
     }
 }
 
-int readKillEventLines(KillEvent *k)
+int readKillEventLines(KillEvent *event)
 {
     char line[128];
     while (1)
@@ -138,12 +141,12 @@ int readKillEventLines(KillEvent *k)
         char command[16];
         int processID, time;
 
-        int f = sscanf(line, "%15s %d %d", command, &processID, &time);
+        int flag = sscanf(line, "%15s %d %d", command, &processID, &time);
 
-        if (f == 3 && strcmp(command, "KILL") == 0 && processID > 0 && time >= 0)
+        if (flag == 3 && strcmp(command, "KILL") == 0 && processID > 0 && time >= 0)
         {
-            k->processID = processID;
-            k->at = time;
+            event->processID = processID;
+            event->killedAtTime = time;
             return 1;
         }
 
@@ -151,47 +154,47 @@ int readKillEventLines(KillEvent *k)
     }
 }
 
-void initializeQueue(ProcessQueue *q) { q->head = q->tail = NULL; }
+void initializeQueue(ProcessQueue *queue) { queue->head = queue->tail = NULL; }
 
-void pushIntoQueue(ProcessQueue *q, ProcessControlBlocks *p)
+void pushIntoQueue(ProcessQueue *queue, ProcessControlBlocks *process)
 {
-    p->next = NULL;
-    if (!q->tail)
-        q->head = q->tail = p;
+    process->next = NULL;
+    if (!queue->tail)
+        queue->head = queue->tail = process;
     else
     {
-        q->tail->next = p;
-        q->tail = p;
+        queue->tail->next = process;
+        queue->tail = process;
     }
 }
 
-ProcessControlBlocks *popFromQueue(ProcessQueue *q)
+ProcessControlBlocks *popFromQueue(ProcessQueue *queue)
 {
-    if (!q->head)
+    if (!queue->head)
         return NULL;
-    ProcessControlBlocks *p = q->head;
-    q->head = p->next;
-    if (!q->head)
-        q->tail = NULL;
-    p->next = NULL;
-    return p;
+    ProcessControlBlocks *process = queue->head;
+    queue->head = process->next;
+    if (!queue->head)
+        queue->tail = NULL;
+    process->next = NULL;
+    return process;
 }
 
-ProcessControlBlocks *removeProcessIdfromQueue(ProcessQueue *q, int processID)
+ProcessControlBlocks *removeProcessIdfromQueue(ProcessQueue *queue, int processID)
 {
-    ProcessControlBlocks *prev = NULL, *cur = q->head;
+    ProcessControlBlocks *prev = NULL, *cur = queue->head;
 
     while (cur)
     {
         if (cur->processID == processID)
         {
             if (!prev)
-                q->head = cur->next;
+                queue->head = cur->next;
             else
                 prev->next = cur->next;
 
-            if (q->tail == cur)
-                q->tail = prev;
+            if (queue->tail == cur)
+                queue->tail = prev;
 
             cur->next = NULL;
             return cur;
@@ -204,9 +207,9 @@ ProcessControlBlocks *removeProcessIdfromQueue(ProcessQueue *q, int processID)
 
 int hashIndex(int processID)
 {
-    unsigned int k = (unsigned int)processID;
-    k *= 2654435761u;
-    return (int)(k % hashSize);
+    unsigned int tempVariable = (unsigned int)processID;
+    tempVariable *= 2654435761u;
+    return (int)(tempVariable % hashSize);
 }
 
 void initializeHash(int size)
@@ -221,28 +224,28 @@ void initializeHash(int size)
     }
 }
 
-void hashPut(ProcessControlBlocks *p)
+void hashPut(ProcessControlBlocks *process)
 {
-    int idx = hashIndex(p->processID);
+    int index = hashIndex(process->processID);
 
-    while (hashTable[idx].key != -1)
-        idx = (idx + 1) % hashSize;
+    while (hashTable[index].key != -1)
+        index = (index + 1) % hashSize;
 
-    hashTable[idx].key = p->processID;
-    hashTable[idx].process = p;
+    hashTable[index].key = process->processID;
+    hashTable[index].process = process;
 }
 
 ProcessControlBlocks *hashGet(int processID)
 {
-    int idx = hashIndex(processID);
-    int start = idx;
+    int index = hashIndex(processID);
+    int start = index;
 
-    while (hashTable[idx].key != -1)
+    while (hashTable[index].key != -1)
     {
-        if (hashTable[idx].key == processID)
-            return hashTable[idx].process;
-        idx = (idx + 1) % hashSize;
-        if (idx == start)
+        if (hashTable[index].key == processID)
+            return hashTable[index].process;
+        index = (index + 1) % hashSize;
+        if (index == start)
             break;
     }
     return NULL;
@@ -250,32 +253,39 @@ ProcessControlBlocks *hashGet(int processID)
 
 void progressIO()
 {
-    ProcessControlBlocks *cur = waitQ.head, *prev = NULL;
+    ProcessControlBlocks *cur = waitQueue.head, *prev = NULL;
 
     while (cur)
     {
         ProcessControlBlocks *temp = cur->next;
-        cur->remainingIO--;
-        cur->usedIO++;
-        cur->totalIOTimeSpent++;
+        if (cur->ioJustStartedFlag)
+        {
+            cur->ioJustStartedFlag = 0;
+        }
+        else
+        {
+            cur->ioRemaining--;
+            cur->ioUsed++;
+            cur->ioTotalTime++;
+        }
 
-        if (cur->remainingIO <= 0)
+        if (cur->ioRemaining <= 0)
         {
             cur->state = READY_PROCESS;
-            cur->execSince = 0;
+            cur->cpuSinceStart = 0;
 
             if (!prev)
-                waitQ.head = temp;
+                waitQueue.head = temp;
             else
                 prev->next = temp;
 
-            if (waitQ.tail == cur)
-                waitQ.tail = prev;
+            if (waitQueue.tail == cur)
+                waitQueue.tail = prev;
 
             cur->next = NULL;
-            pushIntoQueue(&readyQ, cur);
+            pushIntoQueue(&readyQueue, cur);
 
-            printf("time %d: PID %d IO complete -> READY\n", now + 1, cur->processID);
+            printf("time %d: PID %d IO complete -> READY\n", currentTime + 1, cur->processID);
         }
         else
             prev = cur;
@@ -286,48 +296,48 @@ void progressIO()
 
 void processKills(KillEvent *event, int total, int *ptr)
 {
-    while (*ptr < total && event[*ptr].at == now)
+    while (*ptr < total && event[*ptr].killedAtTime == currentTime)
     {
         int id = event[*ptr].processID;
         ProcessControlBlocks *temp = hashGet(id);
 
         if (temp && temp->state != TERMINATED_PROCESS && temp->state != KILLED_PROCESS)
         {
-            if (running == temp)
+            if (runningProcessTracker == temp)
             {
-                running = NULL;
+                runningProcessTracker = NULL;
                 temp->state = KILLED_PROCESS;
-                temp->completion = now;
+                temp->completionTime = currentTime;
 
-                pushIntoQueue(&doneQ, temp);
-                doneCount++;
+                pushIntoQueue(&terminationQueue, temp);
+                completedProcessCount++;
 
-                printf("time %d: PID %d KILLED\n", now, id);
+                printf("time %d: PID %d KILLED\n", currentTime, id);
             }
             else
             {
-                ProcessControlBlocks *r = removeProcessIdfromQueue(&readyQ, id);
-                if (r)
+                ProcessControlBlocks *process = removeProcessIdfromQueue(&readyQueue, id);
+                if (process)
                 {
-                    r->state = KILLED_PROCESS;
-                    r->completion = now;
-                    pushIntoQueue(&doneQ, r);
-                    doneCount++;
+                    process->state = KILLED_PROCESS;
+                    process->completionTime = currentTime;
+                    pushIntoQueue(&terminationQueue, process);
+                    completedProcessCount++;
 
-                    printf("time %d: PID %d KILLED (READY)\n", now, id);
+                    printf("time %d: PID %d KILLED (READY)\n", currentTime, id);
                 }
                 else
                 {
-                    ProcessControlBlocks *w = removeProcessIdfromQueue(&waitQ, id);
-                    if (w)
+                    ProcessControlBlocks *process = removeProcessIdfromQueue(&waitQueue, id);
+                    if (process)
                     {
-                        w->state = KILLED_PROCESS;
-                        w->completion = now;
+                        process->state = KILLED_PROCESS;
+                        process->completionTime = currentTime;
 
-                        pushIntoQueue(&doneQ, w);
-                        doneCount++;
+                        pushIntoQueue(&terminationQueue, process);
+                        completedProcessCount++;
 
-                        printf("time %d: PID %d KILLED (WAITING)\n", now, id);
+                        printf("time %d: PID %d KILLED (WAITING)\n", currentTime, id);
                     }
                 }
             }
@@ -336,41 +346,44 @@ void processKills(KillEvent *event, int total, int *ptr)
     }
 }
 
-void simulateTick()
+void simulkilledAtTimeeTick()
 {
-    if (running)
+    if (runningProcessTracker)
     {
-        running->usedCPU++;
-        running->execSince++;
+        runningProcessTracker->cpuUsed++;
+        runningProcessTracker->cpuSinceStart++;
 
         printf("time %d: Running PID %d (cpuUsed=%d)\n",
-               now, running->processID, running->usedCPU);
+               currentTime, runningProcessTracker->processID, runningProcessTracker->cpuUsed);
 
-        if (running->ioLen > 0 &&
-            running->execSince == running->ioStarttart &&
-            running->usedIO == 0)
+        if (runningProcessTracker->ioDurationTime > 0 &&
+            runningProcessTracker->cpuSinceStart == runningProcessTracker->ioStartTime &&
+            runningProcessTracker->ioUsed == 0)
         {
-            running->remainingIO = running->ioLen;
-            running->state = WAITING_PROCESS;
-            pushIntoQueue(&waitQ, running);
+            runningProcessTracker->ioRemaining = runningProcessTracker->ioDurationTime;
+            runningProcessTracker->state = WAITING_PROCESS;
+
+            runningProcessTracker->ioJustStartedFlag = 1;
+
+            pushIntoQueue(&waitQueue, runningProcessTracker);
 
             printf("time %d: PID %d moved to WAITING (IO start)\n",
-                   now + 1, running->processID);
+                   currentTime + 1, runningProcessTracker->processID);
 
-            running = NULL;
+            runningProcessTracker = NULL;
         }
 
-        if (running && running->usedCPU >= running->burst)
+        if (runningProcessTracker && runningProcessTracker->cpuUsed >= runningProcessTracker->cpuBurstTime)
         {
-            running->state = TERMINATED_PROCESS;
-            running->completion = now + 1;
-            pushIntoQueue(&doneQ, running);
-            doneCount++;
+            runningProcessTracker->state = TERMINATED_PROCESS;
+            runningProcessTracker->completionTime = currentTime + 1;
+            pushIntoQueue(&terminationQueue, runningProcessTracker);
+            completedProcessCount++;
 
-            printf("time %d: PID %d TERMINATED\n",
-                   now + 1, running->processID);
+            printf("time %d: PID %d TERMINkilledAtTimeED\n",
+                   currentTime + 1, runningProcessTracker->processID);
 
-            running = NULL;
+            runningProcessTracker = NULL;
         }
     }
 
@@ -379,41 +392,41 @@ void simulateTick()
 
 void incrementReadyWaits()
 {
-    ProcessControlBlocks *cur = readyQ.head;
+    ProcessControlBlocks *cur = readyQueue.head;
     while (cur)
     {
-        cur->waiting++;
+        cur->waitingTime++;
         cur = cur->next;
     }
 }
 
-void simulate(KillEvent *event, int killCount)
+void simulkilledAtTimee(KillEvent *event, int killCount)
 {
     int ptr = 0;
-    now = 0;
-    doneCount = 0;
+    currentTime = 0;
+    completedProcessCount = 0;
 
-    running = NULL;
+    runningProcessTracker = NULL;
 
-    while (doneCount < totalProcess)
+    while (completedProcessCount < totalProcesses)
     {
         processKills(event, killCount, &ptr);
 
-        if (!running)
+        if (!runningProcessTracker)
         {
-            running = popFromQueue(&readyQ);
-            if (running)
+            runningProcessTracker = popFromQueue(&readyQueue);
+            if (runningProcessTracker)
             {
-                running->state = RUNNING_PROCESS;
-                printf("time %d: PID %d scheduled\n", now, running->processID);
+                runningProcessTracker->state = RUNNING_PROCESS;
+                printf("time %d: PID %d scheduled\n", currentTime, runningProcessTracker->processID);
             }
         }
 
         incrementReadyWaits();
 
-        simulateTick();
+        simulkilledAtTimeeTick();
 
-        now++;
+        currentTime++;
     }
 }
 
@@ -423,17 +436,17 @@ void displayResult()
     printf("PID\tName\tCPU\tIO\tStatus\t\tTurnaround\tWaiting\n");
 
     ProcessControlBlocks *arr[256];
-    int n = 0;
+    int terminatedCount = 0;
 
-    ProcessControlBlocks *cur = doneQ.head;
+    ProcessControlBlocks *cur = terminationQueue.head;
     while (cur)
     {
-        arr[n++] = cur;
+        arr[terminatedCount++] = cur;
         cur = cur->next;
     }
 
-    for (int i = 0; i < n - 1; i++)
-        for (int j = 0; j < n - i - 1; j++)
+    for (int i = 0; i < terminatedCount - 1; i++)
+        for (int j = 0; j < terminatedCount - i - 1; j++)
             if (arr[j]->processID > arr[j + 1]->processID)
             {
                 ProcessControlBlocks *tmp = arr[j];
@@ -441,34 +454,33 @@ void displayResult()
                 arr[j + 1] = tmp;
             }
 
-    for (int i = 0; i < n; i++)
+    for (int i = 0; i < terminatedCount; i++)
     {
-        ProcessControlBlocks *p = arr[i];
+        ProcessControlBlocks *process = arr[i];
 
-        if (p->state == KILLED_PROCESS)
+        if (process->state == KILLED_PROCESS)
         {
-            printf("%d\t%s\t%d\t%d\tKILLED at %d\t-\t\t-\n",
-                   p->processID, p->name, p->burst, p->totalIOTimeSpent, p->completion);
+            printf("%d\t%s\t%d\t%d\tKILLED AT %d\t-\t\t-\n",
+                   process->processID, process->processName, process->cpuBurstTime, process->ioTotalTime, process->completionTime);
             continue;
         }
 
-        int tat = p->completion - p->arrival;
+        int turnAroundTime = process->completionTime - process->arrivalTime;
+        int waitTime = turnAroundTime - process->cpuBurstTime;
 
-        int wait = tat - p->burst - p->totalIOTimeSpent;
-
-        if (wait < 0)
+        if (waitTime < 0)
         {
-            wait = 0;
+            waitTime = 0;
         }
 
-        int io_output = p->totalIOTimeSpent;
+        int io_output = process->ioTotalTime;
 
         printf("%d\t%s\t%d\t%d\tOK\t\t%d\t\t%d\n",
-               p->processID, p->name,
-               p->burst,
+               process->processID, process->processName,
+               process->cpuBurstTime,
                io_output,
-               tat,
-               wait);
+               turnAroundTime,
+               waitTime);
     }
 }
 
@@ -476,19 +488,19 @@ void freeMemory(KillEvent *event)
 {
     ProcessControlBlocks *temp;
 
-    while ((temp = doneQ.head))
+    while ((temp = terminationQueue.head))
     {
-        doneQ.head = temp->next;
+        terminationQueue.head = temp->next;
         free(temp);
     }
-    while ((temp = readyQ.head))
+    while ((temp = readyQueue.head))
     {
-        doneQ.head = temp->next;
+        terminationQueue.head = temp->next;
         free(temp);
     }
-    while ((temp = waitQ.head))
+    while ((temp = waitQueue.head))
     {
-        waitQ.head = temp->next;
+        waitQueue.head = temp->next;
         free(temp);
     }
 
@@ -500,40 +512,40 @@ void freeMemory(KillEvent *event)
 
 int main()
 {
-    initializeQueue(&readyQ);
-    initializeQueue(&waitQ);
-    initializeQueue(&doneQ);
+    initializeQueue(&readyQueue);
+    initializeQueue(&waitQueue);
+    initializeQueue(&terminationQueue);
 
     printf("Enter number of processes: ");
-    totalProcess = readIntegers();
+    totalProcesses = readIntegers();
 
-    initializeHash(totalProcess * 2);
+    initializeHash(totalProcesses * 2);
 
-    printf("\nEnter each process as: <name> <processID> <cpu> <ioStarttart> <ioDurationuration>\n");
-    for (int i = 0; i < totalProcess; i++)
+    printf("\nEnter each process as: <processName> <processID> <cpu> <ioStartTime> <ioDurationTime>\n");
+    for (int i = 0; i < totalProcesses; i++)
     {
         ProcessControlBlocks *p = malloc(sizeof(ProcessControlBlocks));
         readProcessLines(p);
         hashPut(p);
-        pushIntoQueue(&readyQ, p);
+        pushIntoQueue(&readyQueue, p);
     }
 
     printf("\nEnter number of kill events: ");
-    int killCount;
-    scanf("%d", &killCount);
+    int totalKillEvents;
+    scanf("%d", &totalKillEvents);
     char c;
     while ((c = getchar()) != '\n' && c != EOF);
     printf("\n");
     KillEvent *event = NULL;
-    if (killCount > 0)
+    if (totalKillEvents > 0)
     {
         printf("Enter each kill event as: KILL <processID> <time>\n");
-        event = malloc(sizeof(KillEvent) * killCount);
-        for (int i = 0; i < killCount; i++)
+        event = malloc(sizeof(KillEvent) * totalKillEvents);
+        for (int i = 0; i < totalKillEvents; i++)
             readKillEventLines(&event[i]);
     }
 
-    simulate(event, killCount);
+    simulkilledAtTimee(event, totalKillEvents);
     displayResult();
     freeMemory(event);
     return 0;
