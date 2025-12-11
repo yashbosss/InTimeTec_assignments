@@ -227,10 +227,16 @@ void initializeHash(int size)
 void hashPut(ProcessControlBlocks *process)
 {
     int index = hashIndex(process->processID);
-
-    while (hashTable[index].key != -1)
+    int start = index;
+    while (hashTable[index].key != -1) {
+        if (hashTable[index].key == process->processID)
+        return;
+        
         index = (index + 1) % hashSize;
-
+        if (index == start) {
+            return;
+        }
+    }
     hashTable[index].key = process->processID;
     hashTable[index].process = process;
 }
@@ -272,7 +278,6 @@ void progressIO()
         if (cur->ioRemaining <= 0)
         {
             cur->state = READY_PROCESS;
-            cur->cpuSinceStart = 0;
 
             if (!prev)
                 waitQueue.head = temp;
@@ -346,7 +351,7 @@ void processKills(KillEvent *event, int total, int *ptr)
     }
 }
 
-void simulkilledAtTimeeTick()
+void simulateTick()
 {
     if (runningProcessTracker)
     {
@@ -357,8 +362,7 @@ void simulkilledAtTimeeTick()
                currentTime, runningProcessTracker->processID, runningProcessTracker->cpuUsed);
 
         if (runningProcessTracker->ioDurationTime > 0 &&
-            runningProcessTracker->cpuSinceStart == runningProcessTracker->ioStartTime &&
-            runningProcessTracker->ioUsed == 0)
+            runningProcessTracker->cpuSinceStart == runningProcessTracker->ioStartTime)
         {
             runningProcessTracker->ioRemaining = runningProcessTracker->ioDurationTime;
             runningProcessTracker->state = WAITING_PROCESS;
@@ -380,7 +384,7 @@ void simulkilledAtTimeeTick()
             pushIntoQueue(&terminationQueue, runningProcessTracker);
             completedProcessCount++;
 
-            printf("time %d: PID %d TERMINkilledAtTimeED\n",
+            printf("time %d: PID %d TERMINATED\n",
                    currentTime + 1, runningProcessTracker->processID);
 
             runningProcessTracker = NULL;
@@ -390,17 +394,7 @@ void simulkilledAtTimeeTick()
     progressIO();
 }
 
-void incrementReadyWaits()
-{
-    ProcessControlBlocks *cur = readyQueue.head;
-    while (cur)
-    {
-        cur->waitingTime++;
-        cur = cur->next;
-    }
-}
-
-void simulkilledAtTimee(KillEvent *event, int killCount)
+void simulate(KillEvent *event, int killCount)
 {
     int ptr = 0;
     currentTime = 0;
@@ -422,20 +416,18 @@ void simulkilledAtTimee(KillEvent *event, int killCount)
             }
         }
 
-        incrementReadyWaits();
-
-        simulkilledAtTimeeTick();
+        simulateTick();
 
         currentTime++;
     }
 }
 
-void displayResult()
+void displayResult(int totalProcess)
 {
     printf("\n========= FINAL RESULTS =========\n");
     printf("PID\tName\tCPU\tIO\tStatus\t\tTurnaround\tWaiting\n");
 
-    ProcessControlBlocks *arr[256];
+    ProcessControlBlocks **arr = malloc(sizeof(ProcessControlBlocks*) * totalProcess);
     int terminatedCount = 0;
 
     ProcessControlBlocks *cur = terminationQueue.head;
@@ -482,6 +474,7 @@ void displayResult()
                turnAroundTime,
                waitTime);
     }
+    free(arr);
 }
 
 void freeMemory(KillEvent *event)
@@ -495,7 +488,7 @@ void freeMemory(KillEvent *event)
     }
     while ((temp = readyQueue.head))
     {
-        terminationQueue.head = temp->next;
+        readyQueue.head = temp->next;
         free(temp);
     }
     while ((temp = waitQueue.head))
@@ -545,8 +538,8 @@ int main()
             readKillEventLines(&event[i]);
     }
 
-    simulkilledAtTimee(event, totalKillEvents);
-    displayResult();
+    simulate(event, totalKillEvents);
+    displayResult(totalProcesses);
     freeMemory(event);
     return 0;
 }
